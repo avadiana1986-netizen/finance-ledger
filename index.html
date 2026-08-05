@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>财务总账</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>财务总账</h1>
+      <p>在线录入、按月归类、实时汇总、导出 Excel</p>
+    </div>
+    <div class="top-actions">
+      <div class="status" id="connectionStatus">连接中</div>
+      <button class="login-button" id="loginOpen" type="button">登录</button>
+      <button class="login-button hidden" id="logoutButton" type="button">退出</button>
+    </div>
+  </header>
+
+  <section class="auth-bar" id="authBar">
+    <strong>当前为查看模式</strong>
+    <span>登录后可以新增、修改、删除账单。</span>
+  </section>
+
+  <section class="toolbar">
+    <label>
+      月份
+      <input id="monthFilter" type="month">
+    </label>
+    <button id="currentMonthButton" type="button" class="secondary">本月</button>
+    <button id="allMonthButton" type="button" class="secondary">全部月份</button>
+    <button id="exportExcelButton" type="button">导出当前月份 Excel</button>
+    <span id="monthHint">只统计所选月份，互不混入。</span>
+  </section>
+
+  <main class="layout">
+    <section class="panel entry-panel">
+      <div class="panel-title">
+        <h2>新增账单</h2>
+        <span>输入一句话即可自动识别</span>
+      </div>
+      <form id="entryForm" class="entry-form">
+        <label>日期<input id="entryDate" type="date" required></label>
+        <label>内容<input id="rawText" type="text" placeholder="例如：百星辰购买XXX软件" required></label>
+        <label>金额<input id="amount" type="number" step="0.001" min="0" placeholder="120" required></label>
+        <label>项目名称<input id="itemName" type="text" placeholder="自动提取，也可以手动改"></label>
+        <div class="preview" id="recognitionPreview">等待输入内容</div>
+        <button type="submit" data-edit-only>保存账单</button>
+      </form>
+    </section>
+
+    <section class="kpis">
+      <div class="kpi"><span>当月原账单金额</span><strong id="kpiBase">0.000</strong></div>
+      <div class="kpi"><span>当月公共分摊</span><strong id="kpiShare">0.000</strong></div>
+      <div class="kpi"><span>当月最终合计</span><strong id="kpiFinal">0.000</strong></div>
+      <div class="kpi"><span>当月未识别</span><strong id="kpiUnknown">0</strong></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>分组汇总</h2>
+        <span id="summaryTitleHint">按当前月份自动更新</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>组别</th><th>人数</th><th>登记明细条数</th><th>原账单金额</th><th>公共分摊</th><th>最终合计</th></tr>
+          </thead>
+          <tbody id="summaryBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>人员明细</h2>
+        <input id="personSearch" class="search" type="search" placeholder="搜索人名或组别">
+      </div>
+      <div class="table-wrap tall">
+        <table>
+          <thead>
+            <tr><th>组别</th><th>姓名</th><th>原账单</th><th>分摊</th><th>最终合计</th><th>明细数</th></tr>
+          </thead>
+          <tbody id="peopleBody"></tbody>
+        </table>
+      </div>
+      <div id="personLedgerSection" class="person-ledger hidden">
+        <div class="sub-title">
+          <strong>搜索结果账单明细</strong>
+          <span id="personLedgerHint">输入姓名后显示全部明细</span>
+        </div>
+        <div class="table-wrap tall">
+          <table>
+            <thead>
+              <tr><th>日期</th><th>内容</th><th>姓名</th><th>组别</th><th>金额</th><th>状态</th><th>操作</th></tr>
+            </thead>
+            <tbody id="personLedgerBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>账单记录</h2>
+        <select id="statusFilter">
+          <option value="">全部</option>
+          <option value="已识别">已识别</option>
+          <option value="未识别">未识别</option>
+        </select>
+      </div>
+      <div class="table-wrap tall">
+        <table>
+          <thead>
+            <tr><th>日期</th><th>内容</th><th>姓名</th><th>组别</th><th>金额</th><th>状态</th><th>操作</th></tr>
+          </thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="editDialog" class="modal hidden">
+    <form id="editForm" class="entry-form dialog-form">
+      <h2>修改账单</h2>
+      <input type="hidden" id="editId">
+      <label>日期<input id="editDate" type="date" required></label>
+      <label>内容<input id="editRawText" type="text" required></label>
+      <label>金额<input id="editAmount" type="number" step="0.001" min="0" required></label>
+      <label>项目名称<input id="editItemName" type="text"></label>
+      <div class="preview" id="editPreview"></div>
+      <div class="dialog-actions">
+        <button type="button" id="cancelEdit">取消</button>
+        <button type="submit">保存修改</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="loginDialog" class="modal hidden">
+    <form id="loginForm" class="entry-form dialog-form">
+      <h2>登录财务总账</h2>
+      <label>邮箱<input id="loginEmail" type="email" placeholder="你的邮箱" required></label>
+      <label>密码<input id="loginPassword" type="password" placeholder="密码" required></label>
+      <div class="preview" id="loginMessage">请输入邮箱和密码</div>
+      <div class="dialog-actions">
+        <button type="button" id="cancelLogin">取消</button>
+        <button type="submit">登录</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="newPersonDialog" class="modal hidden">
+    <form id="newPersonForm" class="entry-form dialog-form">
+      <h2>发现未登记新人</h2>
+      <div class="preview" id="newPersonMessage">是否创建新人并登记这条账单？</div>
+      <label>新人姓名<input id="newPersonName" type="text" required></label>
+      <label>
+        所属组别
+        <select id="newPersonGroup" required>
+          <option value="A组">A组</option>
+          <option value="C组">C组</option>
+          <option value="1组">1组</option>
+          <option value="缅籍打粉">缅籍打粉</option>
+          <option value="中国打粉">中国打粉</option>
+          <option value="新人组" selected>新人组</option>
+          <option value="CC外籍新人">CC外籍新人</option>
+          <option value="未分组">未分组</option>
+        </select>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="cancelNewPerson">不创建，按未识别保存</button>
+        <button type="submit">创建并保存</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
