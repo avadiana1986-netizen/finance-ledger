@@ -6,6 +6,7 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let people = [];
 let aliases = [];
 let entries = [];
+let incomes = [];
 let shareRules = [];
 let currentUser = null;
 let currentRows = [];
@@ -17,8 +18,10 @@ const norm = (s) => String(s || "").replace(/\s+/g, "").trim().toLowerCase();
 const today = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 const rowMonth = (entry) => String(entry.entry_date || "").slice(0, 7);
+const incomeMonth = (income) => String(income.income_date || "").slice(0, 7);
 
 const groupOrder = ["A组", "C组", "一组", "缅籍打粉", "中国打粉", "阿U团队打粉", "百汐外籍", "未识别登记"];
+const editableGroups = groupOrder.filter((group) => group !== "未识别登记");
 const groupColors = {
   "A组": "DDEBF7",
   "C组": "E2F0D9",
@@ -57,6 +60,16 @@ function hideModal(id) {
   $(id).classList.add("hidden");
 }
 
+function populateGroupSelects() {
+  for (const id of ["newPersonGroup", "personGroup"]) {
+    const select = $(id);
+    if (!select) continue;
+    const currentValue = select.value;
+    select.innerHTML = editableGroups.map((group) => `<option value="${group}">${group}</option>`).join("");
+    if (currentValue && editableGroups.includes(currentValue)) select.value = currentValue;
+  }
+}
+
 function selectedMonth() {
   return $("monthFilter").value;
 }
@@ -65,6 +78,12 @@ function getMonthEntries() {
   const month = selectedMonth();
   if (!month) return [...entries];
   return entries.filter((entry) => rowMonth(entry) === month);
+}
+
+function getMonthIncomes() {
+  const month = selectedMonth();
+  if (!month) return [...incomes];
+  return incomes.filter((income) => incomeMonth(income) === month);
 }
 
 function monthLabel() {
@@ -113,10 +132,11 @@ function updatePreview(rawId, itemId, previewId) {
 
 async function loadAll() {
   setStatus("读取数据中");
-  const [peopleRes, aliasRes, entryRes, ruleRes] = await Promise.all([
+  const [peopleRes, aliasRes, entryRes, incomeRes, ruleRes] = await Promise.all([
     db.from("people").select("*").order("group_name").order("name"),
     db.from("aliases").select("*"),
     db.from("ledger_entries").select("*").order("entry_date", { ascending: false }).order("created_at", { ascending: false }),
+    db.from("finance_incomes").select("*").order("income_date", { ascending: false }).order("created_at", { ascending: false }),
     db.from("share_rules").select("*").eq("enabled", true),
   ]);
   for (const res of [peopleRes, aliasRes, entryRes, ruleRes]) {
@@ -125,8 +145,9 @@ async function loadAll() {
   people = peopleRes.data || [];
   aliases = aliasRes.data || [];
   entries = entryRes.data || [];
+  incomes = incomeRes.error ? [] : (incomeRes.data || []);
   shareRules = ruleRes.data || [];
-  setStatus("已连接");
+  setStatus(incomeRes.error ? "需执行入账SQL" : "已连接", !incomeRes.error);
   render();
 }
 
@@ -144,7 +165,8 @@ function buildReportRows() {
   }
 
   const shareByPerson = getMonthlyShareByPerson(activePeople);
-  const rows = activePeople.map((person) => {
+  const reportPeople = people.filter((p) => p.active || baseByPerson.has(p.id));
+  const rows = reportPeople.map((person) => {
     const baseAmount = baseByPerson.get(person.id) || 0;
     const shareAmount = shareByPerson.get(person.id) || 0;
     return {
@@ -157,6 +179,53 @@ function buildReportRows() {
   });
 
   return { rows, unknownEntries, monthEntries };
+}
+
+function entryAmount(entry) {
+  return Number(entry.amount || 0);
+}
+
+function incomeAmount(income) {
+  return Number(income.amount || 0);
+}
+
+function monthExpenseTotal(month) {
+  return entries
+    .filter((entry) => !month || rowMonth(entry) === month)
+    .reduce((sum, entry) => sum + entryAmount(entry), 0);
+}
+
+function monthIncomeTotal(month) {
+  return incomes
+    .filter((income) => !month || incomeMonth(income) === month)
+    .reduce((sum, income) => sum + incomeAmount(income), 0);
+}
+
+function buildBalanceReport(expenseTotal) {
+  const month = selectedMonth();
+  if (!month) {
+    const income = monthIncomeTotal("");
+    return {
+      opening: 0,
+      income,
+      expense: expenseTotal,
+      balance: income - expenseTotal,
+    };
+  }
+  const openingIncome = incomes
+    .filter((income) => incomeMonth(income) < month)
+    .reduce((sum, income) => sum + incomeAmount(income), 0);
+  const openingExpense = entries
+    .filter((entry) => rowMonth(entry) < month)
+    .reduce((sum, entry) => sum + entryAmount(entry), 0);
+  const opening = openingIncome - openingExpense;
+  const income = monthIncomeTotal(month);
+  return {
+    opening,
+    income,
+    expense: expenseTotal,
+    balance: opening + income - expenseTotal,
+  };
 }
 
 function getMonthlyShareByPerson(activePeople) {
@@ -213,17 +282,38 @@ function render() {
   currentRows = rows;
   const baseTotal = rows.reduce((s, r) => s + r.baseAmount, 0) + unknownEntries.reduce((s, e) => s + Number(e.amount || 0), 0);
   const shareTotal = rows.reduce((s, r) => s + r.shareAmount, 0);
+  const balance = buildBalanceReport(baseTotal + shareTotal);
 
+  $("kpiOpening").textContent = fmt(balance.opening);
+  $("kpiIncome").textContent = fmt(balance.income);
   $("kpiBase").textContent = fmt(baseTotal);
-  $("kpiShare").textContent = fmt(shareTotal);
   $("kpiFinal").textContent = fmt(baseTotal + shareTotal);
+  $("kpiBalance").textContent = fmt(balance.balance);
   $("kpiUnknown").textContent = unknownEntries.length;
   $("summaryTitleHint").textContent = `${monthLabel()}，共 ${monthEntries.length} 条账单`;
 
+  renderIncomes();
   renderSummary(rows, unknownEntries);
   renderPeople(rows);
+  renderPersonManager();
   renderPersonLedger(rows);
   renderLedger(monthEntries);
+}
+
+function renderIncomes() {
+  const rows = getMonthIncomes();
+  $("incomeBody").innerHTML = rows.map((income) => `
+    <tr>
+      <td>${income.income_date || ""}</td>
+      <td class="final">${fmt(income.amount)}</td>
+      <td>${income.source || income.note || ""}</td>
+      <td>
+        <div class="row-actions">
+          <button data-edit-only onclick="editIncome('${income.id}')" ${canEdit() ? "" : "disabled"}>编辑</button>
+          <button data-edit-only class="danger" onclick="deleteIncome('${income.id}')" ${canEdit() ? "" : "disabled"}>删除</button>
+        </div>
+      </td>
+    </tr>`).join("");
 }
 
 function renderSummary(rows, unknownEntries) {
@@ -251,6 +341,103 @@ function renderPeople(rows) {
       <td>${r.group_name}</td><td>${r.name}</td><td>${fmt(r.baseAmount)}</td><td>${fmt(r.shareAmount)}</td><td class="final">${fmt(r.finalAmount)}</td><td>${r.count}</td>
     </tr>`).join("");
 }
+
+function personAliasText(personId) {
+  return aliases.filter((a) => a.person_id === personId).map((a) => a.alias_name).join("、");
+}
+
+function renderPersonManager() {
+  const keyword = norm($("personSearch").value);
+  const countByPerson = new Map();
+  for (const entry of entries) {
+    if (!entry.person_id) continue;
+    countByPerson.set(entry.person_id, (countByPerson.get(entry.person_id) || 0) + 1);
+  }
+  const rows = people
+    .filter((p) => !keyword || norm(p.name).includes(keyword) || norm(p.group_name).includes(keyword) || norm(personAliasText(p.id)).includes(keyword))
+    .sort((a, b) => {
+      const orderDiff = groupOrder.indexOf(a.group_name) - groupOrder.indexOf(b.group_name);
+      return orderDiff || a.name.localeCompare(b.name, "zh-CN");
+    });
+  $("personManagerBody").innerHTML = rows.map((p) => `
+    <tr class="${p.active ? "" : "inactive"}">
+      <td>${p.active ? "启用" : "停用"}</td>
+      <td>${p.group_name}</td>
+      <td>${p.name}</td>
+      <td>${personAliasText(p.id) || ""}</td>
+      <td>${countByPerson.get(p.id) || 0}</td>
+      <td>
+        <div class="row-actions">
+          <button data-edit-only onclick="editPerson('${p.id}')" ${canEdit() ? "" : "disabled"}>编辑</button>
+          <button data-edit-only class="${p.active ? "danger" : "secondary"}" onclick="togglePerson('${p.id}')" ${canEdit() ? "" : "disabled"}>${p.active ? "停用" : "启用"}</button>
+        </div>
+      </td>
+    </tr>`).join("");
+}
+
+function resetPersonForm() {
+  $("personId").value = "";
+  $("personName").value = "";
+  $("personAliases").value = "";
+  $("personGroup").value = editableGroups[0];
+  $("personManagerMessage").textContent = "选择人员可编辑；停用后不参与后续汇总。";
+}
+
+function parseAliasInput(value) {
+  return [...new Set(String(value || "").split(/[,\s，、]+/).map((x) => x.trim()).filter(Boolean))];
+}
+
+window.editPerson = (id) => {
+  if (!canEdit()) return alert("请先登录后再编辑人员");
+  const person = people.find((p) => p.id === id);
+  if (!person) return;
+  $("personId").value = person.id;
+  $("personName").value = person.name;
+  $("personGroup").value = person.group_name;
+  $("personAliases").value = personAliasText(person.id);
+  $("personManagerMessage").textContent = `正在编辑：${person.name}`;
+  $("personName").focus();
+};
+
+window.togglePerson = async (id) => {
+  if (!canEdit()) return alert("请先登录后再调整人员状态");
+  const person = people.find((p) => p.id === id);
+  if (!person) return;
+  const nextActive = !person.active;
+  const text = nextActive ? "启用" : "停用";
+  if (!confirm(`确定${text} ${person.name} 吗？`)) return;
+  const { error } = await db.from("people").update({ active: nextActive }).eq("id", id);
+  if (error) return alert(error.message);
+  await loadAll();
+};
+
+function resetIncomeForm() {
+  $("incomeId").value = "";
+  $("incomeDate").value = today();
+  $("incomeAmount").value = "";
+  $("incomeSource").value = "";
+  $("incomeMessage").textContent = "录入后会自动参与本月余额计算。";
+}
+
+window.editIncome = (id) => {
+  if (!canEdit()) return alert("请先登录后再编辑入账");
+  const income = incomes.find((x) => x.id === id);
+  if (!income) return;
+  $("incomeId").value = income.id;
+  $("incomeDate").value = income.income_date;
+  $("incomeAmount").value = income.amount;
+  $("incomeSource").value = income.source || income.note || "";
+  $("incomeMessage").textContent = `正在编辑入账：${fmt(income.amount)}`;
+  $("incomeAmount").focus();
+};
+
+window.deleteIncome = async (id) => {
+  if (!canEdit()) return alert("请先登录后再删除入账");
+  if (!confirm("确定删除这条入账记录吗？")) return;
+  const { error } = await db.from("finance_incomes").delete().eq("id", id);
+  if (error) return alert(error.message);
+  await loadAll();
+};
 
 function ledgerRowHtml(entry) {
   const person = people.find((p) => p.id === entry.person_id);
@@ -386,25 +573,41 @@ async function exportExcel() {
   const ExcelJS = window.ExcelJS;
   if (!ExcelJS) return alert("Excel 导出组件加载失败，请刷新后再试。");
   const { rows, unknownEntries, monthEntries } = buildReportRows();
+  const monthIncomes = getMonthIncomes();
   const groups = summarizeGroups(rows, unknownEntries);
-  const totalBase = groups.reduce((s, r) => s + r.base, 0);
   const totalFinal = groups.reduce((s, r) => s + r.final, 0);
+  const balance = buildBalanceReport(totalFinal);
   const wb = new ExcelJS.Workbook();
   wb.creator = "财务总账";
   wb.created = new Date();
 
   const summary = wb.addWorksheet("总账单");
   addTitle(summary, `${monthLabel()}财务总账`, 6);
-  summary.getCell("B3").value = "小组";
+  summary.getCell("A3").value = "项目";
+  summary.getCell("B3").value = "金额/数量";
+  summary.getCell("D3").value = "小组";
   summary.getCell("F3").value = "小组合计";
   styleHeader(summary.getRow(3));
+  const balanceRows = [
+    ["期初结余", balance.opening],
+    ["本月入账", balance.income],
+    ["本月支出", balance.expense],
+    ["剩余可用额度", balance.balance],
+    ["本月入账条数", monthIncomes.length],
+    ["本月账单条数", monthEntries.length],
+  ];
+  balanceRows.forEach((item, index) => {
+    const row = summary.getRow(4 + index);
+    row.getCell(1).value = item[0];
+    row.getCell(2).value = item[1];
+  });
   groups.forEach((g, index) => {
     const row = summary.getRow(4 + index);
-    row.getCell(2).value = groupSummaryLabel(g);
+    row.getCell(4).value = groupSummaryLabel(g);
     row.getCell(6).value = g.final;
   });
   const groupTotalRow = summary.getRow(4 + groups.length);
-  groupTotalRow.getCell(2).value = "合计";
+  groupTotalRow.getCell(4).value = "合计";
   groupTotalRow.getCell(6).value = totalFinal;
   groupTotalRow.eachCell((cell) => {
     cell.font = { bold: true };
@@ -460,10 +663,24 @@ async function exportExcel() {
   }
   summary.columns = [{ width: 22 }, { width: 24 }, { width: 14 }, { width: 16 }, { width: 12 }, { width: 16 }];
   summary.eachRow((row) => {
+    row.getCell(2).numFmt = "#,##0.00";
     row.getCell(6).numFmt = "#,##0.00";
     row.getCell(4).numFmt = "#,##0.00";
   });
   applySheetStyle(summary);
+
+  const incomeSheet = wb.addWorksheet("入账记录");
+  addTitle(incomeSheet, `${monthLabel()}入账记录`, 4);
+  incomeSheet.addRow(["日期", "金额", "来源/备注", "创建时间"]);
+  styleHeader(incomeSheet.getRow(3), "16756F");
+  monthIncomes.forEach((income) => {
+    incomeSheet.addRow([income.income_date, Number(income.amount || 0), income.source || income.note || "", income.created_at || ""]);
+  });
+  const incomeTotalRow = incomeSheet.addRow(["合计", balance.income, "", ""]);
+  fillRow(incomeTotalRow, "FFF2CC");
+  incomeTotalRow.font = { bold: true };
+  incomeSheet.columns = [{ width: 14 }, { width: 16 }, { width: 36 }, { width: 24 }];
+  applySheetStyle(incomeSheet);
 
   const detail = wb.addWorksheet("分组明细");
   addTitle(detail, `${monthLabel()}各小组详细明细`, 6);
@@ -557,6 +774,30 @@ $("entryForm").addEventListener("submit", async (event) => {
   }
 });
 
+$("incomeForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!canEdit()) return alert("请先登录后再保存入账");
+  const id = $("incomeId").value;
+  const payload = {
+    income_date: $("incomeDate").value,
+    amount: Number($("incomeAmount").value || 0),
+    source: $("incomeSource").value.trim(),
+    note: $("incomeSource").value.trim(),
+    updated_at: new Date().toISOString(),
+  };
+  if (id) {
+    const { error } = await db.from("finance_incomes").update(payload).eq("id", id);
+    if (error) return alert(error.message);
+  } else {
+    const { error } = await db.from("finance_incomes").insert(payload);
+    if (error) return alert(error.message);
+  }
+  $("monthFilter").value = incomeMonth(payload);
+  resetIncomeForm();
+  $("incomeMessage").textContent = "入账已保存";
+  await loadAll();
+});
+
 $("editForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!canEdit()) return alert("请先登录后再修改账单");
@@ -648,6 +889,52 @@ $("newPersonForm").addEventListener("submit", async (event) => {
   await loadAll();
 });
 
+$("personForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!canEdit()) return alert("请先登录后再保存人员");
+  const id = $("personId").value;
+  const name = $("personName").value.trim();
+  const groupName = $("personGroup").value;
+  const aliasNames = parseAliasInput($("personAliases").value).filter((alias) => norm(alias) !== norm(name));
+  if (!name) return alert("请填写姓名");
+
+  let personId = id;
+  if (id) {
+    const { error } = await db.from("people").update({
+      name,
+      group_name: groupName,
+      active: true,
+      note: "网站人员管理更新",
+    }).eq("id", id);
+    if (error) return alert(error.message);
+  } else {
+    const exists = people.find((p) => norm(p.name) === norm(name));
+    if (exists) return alert("这个姓名已经存在，请直接编辑原人员。");
+    const { data, error } = await db.from("people").insert({
+      name,
+      group_name: groupName,
+      active: true,
+      note: "网站人员管理创建",
+    }).select("*").single();
+    if (error) return alert(error.message);
+    personId = data.id;
+  }
+
+  const deleteRes = await db.from("aliases").delete().eq("person_id", personId);
+  if (deleteRes.error) return alert(deleteRes.error.message);
+  if (aliasNames.length) {
+    const rows = aliasNames.map((alias) => ({ alias_name: alias, person_id: personId, note: "网站人员管理设置" }));
+    const { error } = await db.from("aliases").insert(rows);
+    if (error) return alert(error.message);
+  }
+
+  resetPersonForm();
+  $("personManagerMessage").textContent = "人员已保存";
+  await loadAll();
+});
+
+$("resetPersonForm").addEventListener("click", resetPersonForm);
+$("resetIncomeForm").addEventListener("click", resetIncomeForm);
 $("rawText").addEventListener("input", () => updatePreview("rawText", "itemName", "recognitionPreview"));
 $("editRawText").addEventListener("input", () => updatePreview("editRawText", "editItemName", "editPreview"));
 $("personSearch").addEventListener("input", render);
@@ -663,7 +950,9 @@ $("allMonthButton").addEventListener("click", () => {
 });
 $("exportExcelButton").addEventListener("click", exportExcel);
 
+populateGroupSelects();
 $("entryDate").value = today();
+$("incomeDate").value = today();
 $("monthFilter").value = currentMonth();
 (async function init() {
   const { data } = await db.auth.getSession();

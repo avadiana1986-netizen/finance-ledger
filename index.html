@@ -55,10 +55,38 @@
     </section>
 
     <section class="kpis">
+      <div class="kpi"><span>期初结余</span><strong id="kpiOpening">0.000</strong></div>
+      <div class="kpi"><span>本月入账</span><strong id="kpiIncome">0.000</strong></div>
       <div class="kpi"><span>当月原账单金额</span><strong id="kpiBase">0.000</strong></div>
-      <div class="kpi"><span>当月公共分摊</span><strong id="kpiShare">0.000</strong></div>
       <div class="kpi"><span>当月最终合计</span><strong id="kpiFinal">0.000</strong></div>
+      <div class="kpi"><span>剩余可用额度</span><strong id="kpiBalance">0.000</strong></div>
       <div class="kpi"><span>当月未识别</span><strong id="kpiUnknown">0</strong></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>入账金额</h2>
+        <span>结余自动带入下个月</span>
+      </div>
+      <form id="incomeForm" class="manager-form">
+        <input id="incomeId" type="hidden">
+        <label>日期<input id="incomeDate" type="date" required></label>
+        <label>金额<input id="incomeAmount" type="number" step="0.001" min="0" required></label>
+        <label>来源/备注<input id="incomeSource" type="text" placeholder="例如：本月充值、上月结余调整"></label>
+        <div class="manager-actions">
+          <button type="submit" data-edit-only>保存入账</button>
+          <button type="button" id="resetIncomeForm" class="secondary">清空</button>
+        </div>
+        <div class="preview" id="incomeMessage">录入后会自动参与本月余额计算。</div>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>日期</th><th>金额</th><th>来源/备注</th><th>操作</th></tr>
+          </thead>
+          <tbody id="incomeBody"></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="panel">
@@ -102,6 +130,35 @@
             <tbody id="personLedgerBody"></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">
+        <h2>人员管理</h2>
+        <span>登录后可新增、修改、停用和设置别名</span>
+      </div>
+      <form id="personForm" class="manager-form">
+        <input id="personId" type="hidden">
+        <label>姓名<input id="personName" type="text" placeholder="例如：百某某" required></label>
+        <label>
+          所属组别
+          <select id="personGroup" required></select>
+        </label>
+        <label>别名<input id="personAliases" type="text" placeholder="多个别名用空格、逗号或顿号分开"></label>
+        <div class="manager-actions">
+          <button type="submit" data-edit-only>保存人员</button>
+          <button type="button" id="resetPersonForm" class="secondary">清空</button>
+        </div>
+        <div class="preview" id="personManagerMessage">选择人员可编辑；停用后不参与后续汇总。</div>
+      </form>
+      <div class="table-wrap tall">
+        <table>
+          <thead>
+            <tr><th>状态</th><th>组别</th><th>姓名</th><th>别名</th><th>历史明细</th><th>操作</th></tr>
+          </thead>
+          <tbody id="personManagerBody"></tbody>
+        </table>
       </div>
     </section>
 
@@ -162,14 +219,6 @@
       <label>
         所属组别
         <select id="newPersonGroup" required>
-          <option value="A组">A组</option>
-          <option value="C组">C组</option>
-          <option value="1组">1组</option>
-          <option value="缅籍打粉">缅籍打粉</option>
-          <option value="中国打粉">中国打粉</option>
-          <option value="新人组" selected>新人组</option>
-          <option value="CC外籍新人">CC外籍新人</option>
-          <option value="未分组">未分组</option>
         </select>
       </label>
       <div class="dialog-actions">

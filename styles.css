@@ -105,6 +105,21 @@ h1, h2, p { margin: 0; }
   gap: 12px;
   padding: 16px;
 }
+.manager-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 2fr auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.manager-actions {
+  display: flex;
+  gap: 8px;
+}
+.manager-form .preview {
+  grid-column: 1 / -1;
+}
 label {
   display: grid;
   gap: 6px;
@@ -150,7 +165,7 @@ button.secondary { background: var(--blue); }
 }
 .kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
   background: transparent;
   border: 0;
@@ -198,6 +213,10 @@ td {
 tbody tr:nth-child(even) { background: var(--soft); }
 .final { background: var(--green); font-weight: 700; }
 .unknown { background: var(--rose) !important; }
+.inactive td {
+  background: #f3f5f7;
+  color: #8a95a5;
+}
 .total { background: var(--gold) !important; font-weight: 700; }
 .search { width: 220px; }
 .person-ledger {
@@ -254,4 +273,6 @@ tbody tr:nth-child(even) { background: var(--soft); }
   .layout { grid-template-columns: 1fr; }
   .entry-panel { grid-row: auto; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .manager-form { grid-template-columns: 1fr; }
+  .manager-actions { flex-direction: column; }
 }
