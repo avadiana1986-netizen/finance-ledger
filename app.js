@@ -1,5 +1,5 @@
-const SUPABASE_URL = "https://kwulrtnhlwqfudpisaol.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt3dWxydG5obHdxZnVkcGlzYW9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyMjE0MTIsImV4cCI6MjEwMDc5NzQxMn0.QZtGAJABvxPOyR_6DMMs2OFw1PaO6u4-2wOE6XHx-Wk";
+const SUPABASE_URL = "https://clobhbfwmaprjmlkudgq.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNsb2JoYmZ3bWFwcmptbGt1ZGdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5MTQ3MzYsImV4cCI6MjEwMTQ5MDczNn0.LjSDt_y4xIeLQfbdDbVC0sFYAhiXfMHlJvzyVFYDf0o";
 
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
