@@ -18,8 +18,18 @@ const today = () => new Date().toISOString().slice(0, 10);
 const currentMonth = () => new Date().toISOString().slice(0, 7);
 const rowMonth = (entry) => String(entry.entry_date || "").slice(0, 7);
 
-const groupOrder = ["A组", "C组", "1组", "缅籍打粉", "中国打粉", "新人组", "CC外籍新人", "未识别登记"];
-const antivirusNames = ["百金汇", "百圣主", "百小多", "百小天", "百星辰", "百汐", "百发百中", "百瑞", "百小龙", "百三炮", "百小伟", "百撤", "百天成", "百高乐", "百金翰", "百祥瑞", "百海洋", "百阿斌"];
+const groupOrder = ["A组", "C组", "一组", "缅籍打粉", "中国打粉", "阿U团队打粉", "百汐外籍", "未识别登记"];
+const groupColors = {
+  "A组": "DDEBF7",
+  "C组": "E2F0D9",
+  "一组": "FFF2CC",
+  "缅籍打粉": "FCE4D6",
+  "中国打粉": "EADCF8",
+  "阿U团队打粉": "DDEBF7",
+  "百汐外籍": "E7E6E6",
+  "未识别登记": "F4CCCC",
+};
+const antivirusNames = [];
 
 function setStatus(text, ok = true) {
   $("connectionStatus").textContent = text;
@@ -189,6 +199,15 @@ function summarizeGroups(rows, unknownEntries) {
   return [...groups.values()].sort((a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group));
 }
 
+function groupSummaryLabel(group) {
+  if (group.group === "未识别登记") return `${group.group}(${group.detailCount}条)`;
+  if (group.group === "阿U团队打粉" && group.people === 1) {
+    const member = currentRows.find((row) => row.group_name === group.group);
+    return `${group.group}${member?.name || ""}(${group.people}人)`;
+  }
+  return `${group.group}(${group.people}人)`;
+}
+
 function render() {
   const { rows, unknownEntries, monthEntries } = buildReportRows();
   currentRows = rows;
@@ -219,7 +238,7 @@ function renderSummary(rows, unknownEntries) {
 
   $("summaryBody").innerHTML = groups.map((r) => `
     <tr>
-      <td>${r.group}</td><td>${r.people}</td><td>${r.detailCount}</td><td>${fmt(r.base)}</td><td>${fmt(r.share)}</td><td class="final">${fmt(r.final)}</td>
+      <td>${groupSummaryLabel(r)}</td><td>${r.people}</td><td>${r.detailCount}</td><td>${fmt(r.base)}</td><td>${fmt(r.share)}</td><td class="final">${fmt(r.final)}</td>
     </tr>`).join("") + `
     <tr class="total"><td>总计</td><td>${totals.people}</td><td>${totals.detailCount}</td><td>${fmt(totals.base)}</td><td>${fmt(totals.share)}</td><td>${fmt(totals.final)}</td></tr>`;
 }
@@ -346,6 +365,12 @@ function applySheetStyle(ws) {
   ws.views = [{ state: "frozen", ySplit: 3 }];
 }
 
+function fillRow(row, color) {
+  row.eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: `FF${color}` } };
+  });
+}
+
 function addTitle(ws, title, columns) {
   ws.mergeCells(1, 1, 1, columns);
   const cell = ws.getCell(1, 1);
@@ -363,62 +388,129 @@ async function exportExcel() {
   const { rows, unknownEntries, monthEntries } = buildReportRows();
   const groups = summarizeGroups(rows, unknownEntries);
   const totalBase = groups.reduce((s, r) => s + r.base, 0);
-  const totalShare = groups.reduce((s, r) => s + r.share, 0);
   const totalFinal = groups.reduce((s, r) => s + r.final, 0);
   const wb = new ExcelJS.Workbook();
   wb.creator = "财务总账";
   wb.created = new Date();
 
   const summary = wb.addWorksheet("总账单");
-  addTitle(summary, `${monthLabel()}账单按小组整理（排除指定人员平摊）`, 6);
-  summary.addRow(["项目", "金额/数量"]);
-  styleHeader(summary.getRow(3));
-  const actualSharePeople = rows.filter((r) => r.shareAmount > 0).length;
-  summary.addRows([
-    ["原账单总金额", totalBase],
-    ["已登记分摊金额", totalBase],
-    ["未登记金额", unknownEntries.reduce((s, e) => s + Number(e.amount || 0), 0)],
-    ["原名单人数", people.filter((p) => p.active).length],
-    ["不参与公共费用平摊人数", rows.filter((r) => r.shareAmount === 0).length],
-    ["实际参与公共费用平摊人数", actualSharePeople],
-    ["名单外待确认人数", unknownEntries.length],
-    ["第三张截图公共费用合计", totalShare],
-    ["总金额核对差额", 0],
-  ]);
-  summary.getCell("D3").value = "小组";
-  summary.getCell("E3").value = "登记明细条数";
+  addTitle(summary, `${monthLabel()}财务总账`, 6);
+  summary.getCell("B3").value = "小组";
   summary.getCell("F3").value = "小组合计";
   styleHeader(summary.getRow(3));
   groups.forEach((g, index) => {
     const row = summary.getRow(4 + index);
-    row.getCell(4).value = g.group;
-    row.getCell(5).value = g.detailCount;
+    row.getCell(2).value = groupSummaryLabel(g);
     row.getCell(6).value = g.final;
   });
   const groupTotalRow = summary.getRow(4 + groups.length);
-  groupTotalRow.getCell(4).value = "合计";
-  groupTotalRow.getCell(5).value = groups.reduce((s, g) => s + g.detailCount, 0);
+  groupTotalRow.getCell(2).value = "合计";
   groupTotalRow.getCell(6).value = totalFinal;
   groupTotalRow.eachCell((cell) => {
     cell.font = { bold: true };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
   });
-  summary.addRow([]);
-  const detailStart = 15;
-  summary.getRow(detailStart).values = ["小组", "人员", "明细条数", "个人分摊合计"];
-  styleHeader(summary.getRow(detailStart), "44546A");
-  rows.forEach((r, i) => {
-    summary.getRow(detailStart + 1 + i).values = [r.group_name, r.name, r.count, r.finalAmount];
+  let currentRow = 4 + groups.length + 3;
+  for (const groupName of groupOrder.filter((g) => g !== "未识别登记")) {
+    const members = rows.filter((r) => r.group_name === groupName);
+    if (!members.length) continue;
+    const color = groupColors[groupName] || "E7E6E6";
+    const titleRow = summary.getRow(currentRow);
+    titleRow.getCell(1).value = `${groupName}（${members.length}人）`;
+    titleRow.getCell(2).value = "人员";
+    titleRow.getCell(3).value = "明细数";
+    titleRow.getCell(4).value = "总金额";
+    styleHeader(titleRow, "44546A");
+    currentRow += 1;
+    for (const member of members) {
+      const row = summary.getRow(currentRow);
+      row.getCell(1).value = groupName;
+      row.getCell(2).value = member.name;
+      row.getCell(3).value = member.count;
+      row.getCell(4).value = member.finalAmount;
+      fillRow(row, color);
+      currentRow += 1;
+    }
+    const totalRow = summary.getRow(currentRow);
+    totalRow.getCell(1).value = `${groupName}合计`;
+    totalRow.getCell(3).value = members.reduce((s, r) => s + r.count, 0);
+    totalRow.getCell(4).value = members.reduce((s, r) => s + r.finalAmount, 0);
+    fillRow(totalRow, "FFF2CC");
+    totalRow.font = { bold: true };
+    currentRow += 2;
+  }
+  const unknownGroup = groups.find((g) => g.group === "未识别登记");
+  if (unknownGroup) {
+    const titleRow = summary.getRow(currentRow);
+    titleRow.getCell(1).value = `未识别登记（${unknownGroup.people}条）`;
+    titleRow.getCell(2).value = "项目";
+    titleRow.getCell(3).value = "明细数";
+    titleRow.getCell(4).value = "总金额";
+    styleHeader(titleRow, "C00000");
+    currentRow += 1;
+    unknownEntries.forEach((entry) => {
+      const row = summary.getRow(currentRow);
+      row.getCell(1).value = "未识别登记";
+      row.getCell(2).value = entry.raw_text;
+      row.getCell(3).value = 1;
+      row.getCell(4).value = Number(entry.amount || 0);
+      fillRow(row, groupColors["未识别登记"]);
+      currentRow += 1;
+    });
+  }
+  summary.columns = [{ width: 22 }, { width: 24 }, { width: 14 }, { width: 16 }, { width: 12 }, { width: 16 }];
+  summary.eachRow((row) => {
+    row.getCell(6).numFmt = "#,##0.00";
+    row.getCell(4).numFmt = "#,##0.00";
   });
-  summary.columns = [{ width: 22 }, { width: 20 }, { width: 14 }, { width: 18 }, { width: 16 }, { width: 16 }];
   applySheetStyle(summary);
 
   const detail = wb.addWorksheet("分组明细");
-  addTitle(detail, `${monthLabel()}分组明细`, 6);
-  detail.addRow(["小组", "人员", "原账单", "公共分摊", "最终合计", "明细数"]);
-  styleHeader(detail.getRow(3));
-  rows.forEach((r) => detail.addRow([r.group_name, r.name, r.baseAmount, r.shareAmount, r.finalAmount, r.count]));
-  detail.columns = [{ width: 18 }, { width: 18 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 12 }];
+  addTitle(detail, `${monthLabel()}各小组详细明细`, 6);
+  let detailRow = 3;
+  for (const groupName of groupOrder.filter((g) => g !== "未识别登记")) {
+    const members = rows.filter((r) => r.group_name === groupName);
+    if (!members.length) continue;
+    const header = detail.getRow(detailRow);
+    header.values = [`${groupName}（${members.length}人）`, "人员", "日期", "内容", "金额", "状态"];
+    styleHeader(header, "44546A");
+    detailRow += 1;
+    for (const member of members) {
+      const memberEntries = monthEntries.filter((e) => e.person_id === member.id);
+      if (!memberEntries.length) {
+        const row = detail.getRow(detailRow);
+        row.values = [groupName, member.name, "", "本月无明细", 0, ""];
+        fillRow(row, groupColors[groupName] || "E7E6E6");
+        detailRow += 1;
+        continue;
+      }
+      memberEntries.forEach((entry) => {
+        const row = detail.getRow(detailRow);
+        row.values = [groupName, member.name, entry.entry_date, entry.raw_text, Number(entry.amount || 0), entry.status];
+        fillRow(row, groupColors[groupName] || "E7E6E6");
+        detailRow += 1;
+      });
+      const totalRow = detail.getRow(detailRow);
+      totalRow.values = [groupName, `${member.name}合计`, "", "", memberEntries.reduce((s, e) => s + Number(e.amount || 0), 0), ""];
+      fillRow(totalRow, "FFF2CC");
+      totalRow.font = { bold: true };
+      detailRow += 1;
+    }
+    detailRow += 1;
+  }
+  if (unknownEntries.length) {
+    const header = detail.getRow(detailRow);
+    header.values = [`未识别登记（${unknownEntries.length}条）`, "项目", "日期", "内容", "金额", "状态"];
+    styleHeader(header, "C00000");
+    detailRow += 1;
+    unknownEntries.forEach((entry) => {
+      const row = detail.getRow(detailRow);
+      row.values = ["未识别登记", entry.raw_text, entry.entry_date, entry.raw_text, Number(entry.amount || 0), entry.status];
+      fillRow(row, groupColors["未识别登记"]);
+      detailRow += 1;
+    });
+  }
+  detail.columns = [{ width: 20 }, { width: 18 }, { width: 14 }, { width: 46 }, { width: 14 }, { width: 12 }];
   applySheetStyle(detail);
 
   const raw = wb.addWorksheet("原始账单");
