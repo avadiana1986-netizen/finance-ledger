@@ -46,8 +46,10 @@
       </div>
       <form id="entryForm" class="entry-form">
         <label>日期<input id="entryDate" type="date" required></label>
-        <label>内容<input id="rawText" type="text" placeholder="例如：百星辰购买XXX软件" required></label>
-        <label>金额<input id="amount" type="number" step="0.001" min="0" placeholder="120" required></label>
+        <label>内容<textarea id="rawText" rows="5" placeholder="例如：
+百一 购买XXX软件 120
+百小多 购买YYY软件 80" required></textarea></label>
+        <label>金额<input id="amount" type="number" step="0.001" min="0" placeholder="单行金额，或批量时作为备用金额"></label>
         <label>项目名称<input id="itemName" type="text" placeholder="自动提取，也可以手动改"></label>
         <div class="preview" id="recognitionPreview">等待输入内容</div>
         <button type="submit" data-edit-only>保存账单</button>

@@ -126,7 +126,7 @@ label {
   color: var(--muted);
   font-size: 13px;
 }
-input, select {
+input, select, textarea {
   height: 34px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -135,7 +135,13 @@ input, select {
   color: var(--ink);
   background: #fff;
 }
-input:focus, select:focus {
+textarea {
+  min-height: 96px;
+  padding: 8px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+input:focus, select:focus, textarea:focus {
   outline: 2px solid #b9ddd7;
   border-color: var(--teal);
 }

@@ -132,13 +132,38 @@ function buildMatchers() {
 
 function recognize(rawText) {
   const text = norm(rawText);
-  const match = buildMatchers().find((m) => text.includes(m.key));
-  if (!match) return { person: null, itemName: rawText, status: "未识别" };
-  const itemName = String(rawText || "")
-    .replace(new RegExp(match.original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "")
-    .replace(/购买/g, "")
-    .trim();
-  return { person: match.person, itemName: itemName || rawText, status: "已识别" };
+  const matches = [];
+  const usedPersonIds = new Set();
+  for (const matcher of buildMatchers()) {
+    if (!matcher.key || !text.includes(matcher.key) || usedPersonIds.has(matcher.person.id)) continue;
+    matches.push(matcher);
+    usedPersonIds.add(matcher.person.id);
+  }
+  if (!matches.length) return { person: null, people: [], itemName: rawText, status: "未识别" };
+  let itemName = String(rawText || "");
+  for (const match of matches) {
+    itemName = itemName.replace(new RegExp(match.original.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "");
+  }
+  itemName = itemName.replace(/购买/g, "").replace(/[、，,和+]+/g, " ").trim();
+  return {
+    person: matches[0].person,
+    people: matches.map((match) => match.person),
+    itemName: itemName || rawText,
+    status: "已识别",
+  };
+}
+
+function entryLines(rawText) {
+  return String(rawText || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
+
+function parseLineAmount(line) {
+  const matches = [...String(line || "").matchAll(/(?:￥|¥)?\s*(-?\d+(?:,\d{3})*(?:\.\d+)?)/g)];
+  if (!matches.length) return null;
+  const last = matches[matches.length - 1];
+  const amount = Number(last[1].replace(/,/g, ""));
+  if (!Number.isFinite(amount)) return null;
+  return { amount, text: `${line.slice(0, last.index)} ${line.slice(last.index + last[0].length)}`.trim() };
 }
 
 function guessNewPersonName(rawText) {
@@ -150,11 +175,33 @@ function guessNewPersonName(rawText) {
 
 function updatePreview(rawId, itemId, previewId) {
   const rawText = $(rawId).value;
-  const result = recognize(rawText);
+  const lines = entryLines(rawText);
+  const fallbackAmount = Number($(rawId === "rawText" ? "amount" : "editAmount")?.value || 0);
+  if (rawId === "rawText" && lines.length > 1) {
+    const parsed = lines.map((line) => {
+      const parsedAmount = parseLineAmount(line);
+      const text = parsedAmount?.text || line;
+      const result = recognize(text);
+      return { line, amount: parsedAmount?.amount || fallbackAmount, result };
+    });
+    const missingAmount = parsed.filter((row) => !row.amount).length;
+    const unknown = parsed.filter((row) => !row.result.person).length;
+    const recognizedPeople = parsed.reduce((sum, row) => sum + (row.result.people?.length || (row.result.person ? 1 : 0)), 0);
+    $(previewId).textContent = `批量识别：${lines.length} 行，${recognizedPeople} 笔人员账单${missingAmount ? `，${missingAmount} 行缺少金额` : ""}${unknown ? `，${unknown} 行未识别姓名` : ""}`;
+    return;
+  }
+  const parsedAmount = parseLineAmount(rawText);
+  const result = recognize(parsedAmount?.text || rawText);
   if (!$(itemId).value && result.itemName) $(itemId).value = result.itemName;
-  $(previewId).textContent = result.person
-    ? `识别为：${result.person.group_name} / ${result.person.name}`
-    : "未识别：保存时可创建新人，或按未识别登记";
+  const totalAmount = parsedAmount?.amount || fallbackAmount;
+  if (result.people?.length > 1) {
+    const each = totalAmount ? `，每人 ${fmt(totalAmount / result.people.length)}` : "";
+    $(previewId).textContent = `识别到 ${result.people.length} 人：${result.people.map((p) => `${p.group_name}/${p.name}`).join("、")}，保存时自动平分${each}`;
+  } else {
+    $(previewId).textContent = result.person
+      ? `识别为：${result.person.group_name} / ${result.person.name}`
+      : "未识别：保存时可创建新人，或按未识别登记";
+  }
 }
 
 async function loadAll() {
@@ -593,12 +640,66 @@ function renderLedger(monthEntries) {
 async function saveEntry(form) {
   if (!canEdit()) return alert("请先登录后再保存账单");
   const rawText = $("rawText").value.trim();
-  const result = recognize(rawText);
+  const lines = entryLines(rawText);
+  const fallbackAmount = Number($("amount").value || 0);
+  if (lines.length > 1) {
+    const rows = [];
+    const unknownLines = [];
+    const missingAmountLines = [];
+    for (const line of lines) {
+      const parsedAmount = parseLineAmount(line);
+      const lineText = parsedAmount?.text || line;
+      const result = recognize(lineText);
+      const totalAmount = parsedAmount?.amount || fallbackAmount;
+      if (!totalAmount) {
+        missingAmountLines.push(line);
+        continue;
+      }
+      if (!result.person) {
+        unknownLines.push(line);
+        continue;
+      }
+      const targets = result.people?.length ? result.people : [result.person];
+      const eachAmount = totalAmount / targets.length;
+      for (const person of targets) {
+        rows.push({
+          entry_date: $("entryDate").value,
+          raw_text: line,
+          item_name: result.itemName,
+          amount: eachAmount,
+          person_id: person.id,
+          group_name: person.group_name,
+          status: "已识别",
+          note: targets.length > 1 ? `多人账单自动平分：总额 ${fmt(totalAmount)}，共 ${targets.length} 人` : "批量导入",
+        });
+      }
+    }
+    if (missingAmountLines.length || unknownLines.length) {
+      const messages = [];
+      if (missingAmountLines.length) messages.push(`缺少金额：\n${missingAmountLines.join("\n")}`);
+      if (unknownLines.length) messages.push(`未识别姓名：\n${unknownLines.join("\n")}`);
+      alert(`有内容需要先处理，暂未保存：\n\n${messages.join("\n\n")}`);
+      return;
+    }
+    const { error } = await db.from("ledger_entries").insert(rows);
+    if (error) throw error;
+    form.reset();
+    $("entryDate").value = today();
+    $("monthFilter").value = rowMonth(rows[0]);
+    $("recognitionPreview").textContent = `保存成功：批量导入 ${rows.length} 笔账单`;
+    await loadAll();
+    return;
+  }
+  const parsedAmount = parseLineAmount(rawText);
+  const singleText = parsedAmount?.text || rawText;
+  const result = recognize(singleText);
+  const totalAmount = parsedAmount?.amount || fallbackAmount;
+  if (!totalAmount) return alert("请填写金额，或在内容最后写上金额。");
   const payload = {
     entry_date: $("entryDate").value,
     raw_text: rawText,
     item_name: $("itemName").value.trim() || result.itemName,
-    amount: Number($("amount").value || 0),
+    amount: totalAmount,
     person_id: result.person?.id || null,
     group_name: result.person?.group_name || null,
     status: result.status,
@@ -610,12 +711,22 @@ async function saveEntry(form) {
     showModal("newPersonDialog");
     return;
   }
-  const { error } = await db.from("ledger_entries").insert(payload);
+  const targets = result.people?.length ? result.people : [result.person];
+  const eachAmount = totalAmount / targets.length;
+  const rows = targets.map((person) => ({
+    ...payload,
+    amount: eachAmount,
+    person_id: person.id,
+    group_name: person.group_name,
+    status: "已识别",
+    note: targets.length > 1 ? `多人账单自动平分：总额 ${fmt(totalAmount)}，共 ${targets.length} 人` : payload.note,
+  }));
+  const { error } = await db.from("ledger_entries").insert(rows);
   if (error) throw error;
   form.reset();
   $("entryDate").value = today();
   $("monthFilter").value = rowMonth(payload);
-  $("recognitionPreview").textContent = "保存成功";
+  $("recognitionPreview").textContent = targets.length > 1 ? `保存成功：已拆分 ${targets.length} 条，每人 ${fmt(eachAmount)}` : "保存成功";
   await loadAll();
 }
 
@@ -1128,7 +1239,9 @@ $("groupActionSelect").addEventListener("change", (event) => {
 });
 $("resetIncomeForm").addEventListener("click", resetIncomeForm);
 $("rawText").addEventListener("input", () => updatePreview("rawText", "itemName", "recognitionPreview"));
+$("amount").addEventListener("input", () => updatePreview("rawText", "itemName", "recognitionPreview"));
 $("editRawText").addEventListener("input", () => updatePreview("editRawText", "editItemName", "editPreview"));
+$("editAmount").addEventListener("input", () => updatePreview("editRawText", "editItemName", "editPreview"));
 $("personSearch").addEventListener("input", render);
 $("statusFilter").addEventListener("change", render);
 $("monthFilter").addEventListener("change", render);
