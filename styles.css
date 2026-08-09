@@ -22,13 +22,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24px 28px;
+  padding: 14px 20px;
   background: linear-gradient(135deg, var(--blue), var(--teal));
   color: #fff;
 }
 h1, h2, p { margin: 0; }
-.topbar h1 { font-size: 28px; }
-.topbar p { margin-top: 6px; opacity: .85; }
+.topbar h1 { font-size: 22px; }
+.topbar p { margin-top: 3px; opacity: .85; font-size: 13px; }
 .status {
   border: 1px solid rgba(255,255,255,.35);
   border-radius: 999px;
@@ -50,7 +50,7 @@ h1, h2, p { margin: 0; }
   display: flex;
   gap: 10px;
   align-items: center;
-  padding: 10px 18px;
+  padding: 7px 16px;
   background: #fff2cc;
   border-bottom: 1px solid #ead58c;
   color: #5d4a00;
@@ -60,7 +60,7 @@ h1, h2, p { margin: 0; }
   display: flex;
   align-items: end;
   gap: 10px;
-  padding: 12px 18px;
+  padding: 8px 16px;
   background: #ffffff;
   border-bottom: 1px solid var(--line);
   box-shadow: 0 6px 18px rgba(23,35,49,.04);
@@ -78,9 +78,9 @@ h1, h2, p { margin: 0; }
 }
 .layout {
   display: grid;
-  grid-template-columns: 380px 1fr;
-  gap: 16px;
-  padding: 18px;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
 }
 .panel, .kpi {
   background: var(--panel);
@@ -88,13 +88,13 @@ h1, h2, p { margin: 0; }
   border-radius: 8px;
   box-shadow: 0 10px 28px rgba(23,35,49,.06);
 }
-.entry-panel { grid-row: span 3; }
+.entry-panel { grid-row: span 2; }
 .panel-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--line);
   background: #fbfcfe;
 }
@@ -102,15 +102,15 @@ h1, h2, p { margin: 0; }
 .panel-title span { color: var(--muted); font-size: 12px; }
 .entry-form {
   display: grid;
-  gap: 12px;
-  padding: 16px;
+  gap: 8px;
+  padding: 10px;
 }
 .manager-form {
   display: grid;
   grid-template-columns: 1fr 1fr 2fr auto;
-  gap: 12px;
+  gap: 8px;
   align-items: end;
-  padding: 16px;
+  padding: 10px;
   border-bottom: 1px solid var(--line);
 }
 .manager-actions {
@@ -127,7 +127,7 @@ label {
   font-size: 13px;
 }
 input, select {
-  height: 38px;
+  height: 34px;
   border: 1px solid var(--line);
   border-radius: 7px;
   padding: 0 10px;
@@ -140,7 +140,7 @@ input:focus, select:focus {
   border-color: var(--teal);
 }
 button {
-  height: 39px;
+  height: 34px;
   border: 0;
   border-radius: 7px;
   padding: 0 14px;
@@ -157,37 +157,37 @@ button.secondary { background: var(--blue); }
 .preview {
   border: 1px solid var(--line);
   border-radius: 7px;
-  padding: 10px;
+  padding: 8px;
   background: var(--soft);
   color: var(--blue);
-  min-height: 42px;
+  min-height: 34px;
   font-size: 13px;
 }
 .kpis {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
+  gap: 8px;
   background: transparent;
   border: 0;
   box-shadow: none;
 }
 .kpi {
-  padding: 15px 16px;
+  padding: 10px 12px;
 }
 .kpi span {
   display: block;
   color: var(--muted);
   font-size: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .kpi strong {
-  font-size: 22px;
+  font-size: 20px;
 }
 .table-wrap {
   overflow: auto;
 }
 .table-wrap.tall {
-  max-height: 430px;
+  max-height: 300px;
 }
 table {
   width: 100%;
@@ -201,11 +201,11 @@ th {
   background: var(--blue);
   color: white;
   text-align: right;
-  padding: 10px 9px;
+  padding: 7px 8px;
 }
 th:first-child, td:first-child, td:nth-child(2) { text-align: left; }
 td {
-  padding: 9px;
+  padding: 7px 8px;
   border-bottom: 1px solid var(--line);
   text-align: right;
   white-space: nowrap;
@@ -250,7 +250,7 @@ tbody tr:nth-child(even) { background: var(--soft); }
   white-space: nowrap;
 }
 .row-actions button {
-  height: 28px;
+  height: 26px;
   padding: 0 9px;
   font-size: 12px;
 }
@@ -270,6 +270,14 @@ tbody tr:nth-child(even) { background: var(--soft); }
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 22px 70px rgba(23,35,49,.2);
+}
+.title-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.title-actions select {
+  width: 120px;
 }
 .dialog-form h2 { font-size: 18px; }
 .dialog-actions {

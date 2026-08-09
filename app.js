@@ -21,7 +21,8 @@ const currentMonth = () => new Date().toISOString().slice(0, 7);
 const rowMonth = (entry) => String(entry.entry_date || "").slice(0, 7);
 const incomeMonth = (income) => String(income.income_date || "").slice(0, 7);
 
-const defaultGroups = ["A组", "C组", "一组", "缅籍打粉", "中国打粉", "阿U团队打粉", "百汐外籍"];
+const ungroupedName = "未分组";
+const defaultGroups = ["A组", "C组", "一组", "缅籍打粉", "中国打粉", "阿U团队打粉", "百汐外籍", ungroupedName];
 const defaultGroupColors = {
   "A组": "DDEBF7",
   "C组": "E2F0D9",
@@ -30,6 +31,7 @@ const defaultGroupColors = {
   "中国打粉": "EADCF8",
   "阿U团队打粉": "DDEBF7",
   "百汐外籍": "E7E6E6",
+  "未分组": "F3F5F7",
   "未识别登记": "F4CCCC",
 };
 const antivirusNames = [];
@@ -322,37 +324,10 @@ function render() {
 
   renderIncomes();
   renderSummary(rows, unknownEntries);
-  renderGroupManager();
   renderPeople(rows);
   renderPersonManager();
   renderPersonLedger(rows);
   renderLedger(monthEntries);
-}
-
-function renderGroupManager() {
-  const countByGroup = new Map();
-  for (const person of people) {
-    countByGroup.set(person.group_name, (countByGroup.get(person.group_name) || 0) + 1);
-  }
-  const rows = groups.length
-    ? [...groups]
-    : defaultGroups.map((name, index) => ({ name, sort_order: (index + 1) * 10, color: defaultGroupColors[name] || "E7E6E6", active: true }));
-  $("groupManagerBody").innerHTML = rows
-    .sort((a, b) => Number(a.sort_order || 100) - Number(b.sort_order || 100) || a.name.localeCompare(b.name, "zh-CN"))
-    .map((group) => `
-      <tr class="${group.active ? "" : "inactive"}">
-        <td>${group.active ? "启用" : "停用"}</td>
-        <td>${group.name}</td>
-        <td>${countByGroup.get(group.name) || 0}</td>
-        <td>${group.sort_order || 100}</td>
-        <td><span class="color-swatch" style="background:#${groupColor(group.name)}"></span>#${groupColor(group.name)}</td>
-        <td>
-          <div class="row-actions">
-            <button data-edit-only type="button" onclick="editGroup('${group.name}')" ${canEdit() ? "" : "disabled"}>编辑</button>
-            <button data-edit-only type="button" class="${group.active ? "danger" : "secondary"}" onclick="toggleGroup('${group.name}')" ${canEdit() ? "" : "disabled"}>${group.active ? "停用" : "启用"}</button>
-          </div>
-        </td>
-      </tr>`).join("");
 }
 
 function renderIncomes() {
@@ -473,40 +448,57 @@ window.manageGroup = (groupName) => {
   focusPersonManager(groupName === "未识别登记" ? "正在查看未识别记录" : `正在管理：${groupName}`);
 };
 
+function populateDeleteGroupSelect() {
+  const select = $("deleteGroupName");
+  if (!select) return;
+  const options = editableGroups().filter((group) => group !== ungroupedName);
+  select.innerHTML = options.map((group) => `<option value="${group}">${group}</option>`).join("");
+}
+
 function resetGroupForm() {
   $("groupOriginalName").value = "";
   $("groupName").value = "";
   $("groupSort").value = "";
   $("groupColor").value = "#e7e6e6";
-  $("groupManagerMessage").textContent = "停用小组后，不再出现在新增人员下拉框；历史账单仍保留。";
+  $("groupManagerMessage").textContent = "删除小组后，人员会转入未分组。";
 }
 
-window.editGroup = (groupName) => {
-  if (!canEdit()) return alert("请先登录后再编辑小组");
-  const group = groups.find((item) => item.name === groupName) || {
-    name: groupName,
-    sort_order: groupSortIndex(groupName),
-    color: groupColor(groupName),
-    active: true,
-  };
-  $("groupOriginalName").value = group.name;
-  $("groupName").value = group.name;
-  $("groupSort").value = group.sort_order || 100;
-  $("groupColor").value = `#${groupColor(group.name)}`;
-  $("groupManagerMessage").textContent = `正在编辑小组：${group.name}`;
-  $("groupName").focus();
-};
+function setGroupDialogMode(mode) {
+  resetGroupForm();
+  $("groupForm").dataset.mode = mode;
+  const isDelete = mode === "delete";
+  $("groupDialogTitle").textContent = isDelete ? "删除小组" : "添加小组";
+  $("submitGroupAction").textContent = isDelete ? "确认删除" : "保存小组";
+  $("submitGroupAction").classList.toggle("danger", isDelete);
+  $("groupNameLabel").classList.toggle("hidden", isDelete);
+  $("groupSortLabel").classList.toggle("hidden", isDelete);
+  $("groupColorLabel").classList.toggle("hidden", isDelete);
+  $("groupDeleteLabel").classList.toggle("hidden", !isDelete);
+  if (isDelete) {
+    populateDeleteGroupSelect();
+    $("groupManagerMessage").textContent = `删除后，该小组所有人员和账单会转入「${ungroupedName}」。`;
+  }
+  showModal("groupDialog");
+}
 
-window.toggleGroup = async (groupName) => {
-  if (!canEdit()) return alert("请先登录后再调整小组状态");
-  const group = groups.find((item) => item.name === groupName);
-  if (!group) return alert("请先执行小组管理 SQL 后再停用小组");
-  const nextActive = !group.active;
-  if (!confirm(`确定${nextActive ? "启用" : "停用"} ${group.name} 吗？`)) return;
-  const { error } = await db.from("groups").update({ active: nextActive, updated_at: new Date().toISOString() }).eq("name", group.name);
-  if (error) return alert(error.message);
-  await loadAll();
-};
+async function ensureUngroupedGroup() {
+  const existing = groups.find((group) => group.name === ungroupedName);
+  if (existing) {
+    if (!existing.active) {
+      const { error } = await db.from("groups").update({ active: true, updated_at: new Date().toISOString() }).eq("name", ungroupedName);
+      if (error) throw error;
+    }
+    return;
+  }
+  const { error } = await db.from("groups").insert({
+    name: ungroupedName,
+    sort_order: 900,
+    color: defaultGroupColors[ungroupedName],
+    active: true,
+    note: "删除小组后人员自动归入",
+  });
+  if (error) throw error;
+}
 
 function parseAliasInput(value) {
   return [...new Set(String(value || "").split(/[,\s，、]+/).map((x) => x.trim()).filter(Boolean))];
@@ -1061,6 +1053,24 @@ $("personForm").addEventListener("submit", async (event) => {
 $("groupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!canEdit()) return alert("请先登录后再保存小组");
+  const mode = $("groupForm").dataset.mode || "add";
+  if (mode === "delete") {
+    const groupName = $("deleteGroupName").value;
+    if (!groupName) return alert("请选择要删除的小组");
+    if (groupName === ungroupedName) return alert("未分组不能删除。");
+    if (!confirm(`确定删除「${groupName}」吗？人员和账单会转入「${ungroupedName}」。`)) return;
+    await ensureUngroupedGroup();
+    const peopleUpdate = await db.from("people").update({ group_name: ungroupedName }).eq("group_name", groupName);
+    if (peopleUpdate.error) return alert(peopleUpdate.error.message);
+    const entryUpdate = await db.from("ledger_entries").update({ group_name: ungroupedName }).eq("group_name", groupName);
+    if (entryUpdate.error) return alert(entryUpdate.error.message);
+    const groupUpdate = await db.from("groups").update({ active: false, updated_at: new Date().toISOString() }).eq("name", groupName);
+    if (groupUpdate.error) return alert(groupUpdate.error.message);
+    hideModal("groupDialog");
+    await loadAll();
+    return;
+  }
+
   const originalName = $("groupOriginalName").value.trim();
   const name = $("groupName").value.trim();
   const sortOrder = Number($("groupSort").value || 100);
@@ -1103,11 +1113,19 @@ $("groupForm").addEventListener("submit", async (event) => {
 
   resetGroupForm();
   $("groupManagerMessage").textContent = "小组已保存";
+  hideModal("groupDialog");
   await loadAll();
 });
 
 $("resetPersonForm").addEventListener("click", resetPersonForm);
-$("resetGroupForm").addEventListener("click", resetGroupForm);
+$("cancelGroupAction").addEventListener("click", () => hideModal("groupDialog"));
+$("groupActionSelect").addEventListener("change", (event) => {
+  const action = event.target.value;
+  event.target.value = "";
+  if (!action) return;
+  if (!canEdit()) return alert("请先登录后再操作小组");
+  setGroupDialogMode(action);
+});
 $("resetIncomeForm").addEventListener("click", resetIncomeForm);
 $("rawText").addEventListener("input", () => updatePreview("rawText", "itemName", "recognitionPreview"));
 $("editRawText").addEventListener("input", () => updatePreview("editRawText", "editItemName", "editPreview"));

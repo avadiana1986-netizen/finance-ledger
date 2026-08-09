@@ -92,7 +92,14 @@
     <section class="panel">
       <div class="panel-title">
         <h2>分组汇总</h2>
-        <span id="summaryTitleHint">按当前月份自动更新</span>
+        <div class="title-actions">
+          <span id="summaryTitleHint">按当前月份自动更新</span>
+          <select id="groupActionSelect" data-edit-only>
+            <option value="">小组操作</option>
+            <option value="add">添加小组</option>
+            <option value="delete">删除小组</option>
+          </select>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -100,32 +107,6 @@
             <tr><th>组别</th><th>人数</th><th>登记明细条数</th><th>原账单金额</th><th>公共分摊</th><th>最终合计</th><th>操作</th></tr>
           </thead>
           <tbody id="summaryBody"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-title">
-        <h2>小组管理</h2>
-        <span>新增、改名、排序或停用小组</span>
-      </div>
-      <form id="groupForm" class="manager-form">
-        <input id="groupOriginalName" type="hidden">
-        <label>小组名称<input id="groupName" type="text" placeholder="例如：新小组" required></label>
-        <label>排序<input id="groupSort" type="number" step="1" placeholder="数字越小越靠前"></label>
-        <label>底色<input id="groupColor" type="color" value="#e7e6e6"></label>
-        <div class="manager-actions">
-          <button type="submit" data-edit-only>保存小组</button>
-          <button type="button" id="resetGroupForm" class="secondary">清空</button>
-        </div>
-        <div class="preview" id="groupManagerMessage">停用小组后，不再出现在新增人员下拉框；历史账单仍保留。</div>
-      </form>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>状态</th><th>小组</th><th>人数</th><th>排序</th><th>底色</th><th>操作</th></tr>
-          </thead>
-          <tbody id="groupManagerBody"></tbody>
         </table>
       </div>
     </section>
@@ -250,6 +231,25 @@
       <div class="dialog-actions">
         <button type="button" id="cancelNewPerson">不创建，按未识别保存</button>
         <button type="submit">创建并保存</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="groupDialog" class="modal hidden">
+    <form id="groupForm" class="entry-form dialog-form">
+      <h2 id="groupDialogTitle">添加小组</h2>
+      <input id="groupOriginalName" type="hidden">
+      <label id="groupNameLabel">小组名称<input id="groupName" type="text" placeholder="例如：新小组"></label>
+      <label id="groupDeleteLabel" class="hidden">
+        选择要删除的小组
+        <select id="deleteGroupName"></select>
+      </label>
+      <label id="groupSortLabel">排序<input id="groupSort" type="number" step="1" placeholder="数字越小越靠前"></label>
+      <label id="groupColorLabel">底色<input id="groupColor" type="color" value="#e7e6e6"></label>
+      <div class="preview" id="groupManagerMessage">删除小组后，人员会转入未分组。</div>
+      <div class="dialog-actions">
+        <button type="button" id="cancelGroupAction">取消</button>
+        <button type="submit" id="submitGroupAction">保存</button>
       </div>
     </form>
   </div>
