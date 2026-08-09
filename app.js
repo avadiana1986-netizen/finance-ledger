@@ -7,6 +7,7 @@ let people = [];
 let aliases = [];
 let entries = [];
 let incomes = [];
+let groups = [];
 let shareRules = [];
 let currentUser = null;
 let currentRows = [];
@@ -20,9 +21,8 @@ const currentMonth = () => new Date().toISOString().slice(0, 7);
 const rowMonth = (entry) => String(entry.entry_date || "").slice(0, 7);
 const incomeMonth = (income) => String(income.income_date || "").slice(0, 7);
 
-const groupOrder = ["A组", "C组", "一组", "缅籍打粉", "中国打粉", "阿U团队打粉", "百汐外籍", "未识别登记"];
-const editableGroups = groupOrder.filter((group) => group !== "未识别登记");
-const groupColors = {
+const defaultGroups = ["A组", "C组", "一组", "缅籍打粉", "中国打粉", "阿U团队打粉", "百汐外籍"];
+const defaultGroupColors = {
   "A组": "DDEBF7",
   "C组": "E2F0D9",
   "一组": "FFF2CC",
@@ -33,6 +33,30 @@ const groupColors = {
   "未识别登记": "F4CCCC",
 };
 const antivirusNames = [];
+
+function editableGroups() {
+  const active = groups.filter((group) => group.active).map((group) => group.name);
+  return active.length ? active : defaultGroups;
+}
+
+function allGroupNames() {
+  const names = groups.length ? groups.map((group) => group.name) : defaultGroups;
+  return [...names, "未识别登记"];
+}
+
+function groupColor(groupName) {
+  const fromDb = groups.find((group) => group.name === groupName)?.color;
+  return (fromDb || defaultGroupColors[groupName] || "E7E6E6").replace("#", "").toUpperCase();
+}
+
+function groupSortIndex(groupName) {
+  const group = groups.find((item) => item.name === groupName);
+  if (group) return Number(group.sort_order || 100);
+  const index = defaultGroups.indexOf(groupName);
+  if (index >= 0) return (index + 1) * 10;
+  if (groupName === "未识别登记") return 9999;
+  return 9000;
+}
 
 function setStatus(text, ok = true) {
   $("connectionStatus").textContent = text;
@@ -65,8 +89,9 @@ function populateGroupSelects() {
     const select = $(id);
     if (!select) continue;
     const currentValue = select.value;
-    select.innerHTML = editableGroups.map((group) => `<option value="${group}">${group}</option>`).join("");
-    if (currentValue && editableGroups.includes(currentValue)) select.value = currentValue;
+    const options = editableGroups();
+    select.innerHTML = options.map((group) => `<option value="${group}">${group}</option>`).join("");
+    if (currentValue && options.includes(currentValue)) select.value = currentValue;
   }
 }
 
@@ -132,11 +157,12 @@ function updatePreview(rawId, itemId, previewId) {
 
 async function loadAll() {
   setStatus("读取数据中");
-  const [peopleRes, aliasRes, entryRes, incomeRes, ruleRes] = await Promise.all([
+  const [peopleRes, aliasRes, entryRes, incomeRes, groupRes, ruleRes] = await Promise.all([
     db.from("people").select("*").order("group_name").order("name"),
     db.from("aliases").select("*"),
     db.from("ledger_entries").select("*").order("entry_date", { ascending: false }).order("created_at", { ascending: false }),
     db.from("finance_incomes").select("*").order("income_date", { ascending: false }).order("created_at", { ascending: false }),
+    db.from("groups").select("*").order("sort_order").order("name"),
     db.from("share_rules").select("*").eq("enabled", true),
   ]);
   for (const res of [peopleRes, aliasRes, entryRes, ruleRes]) {
@@ -146,8 +172,10 @@ async function loadAll() {
   aliases = aliasRes.data || [];
   entries = entryRes.data || [];
   incomes = incomeRes.error ? [] : (incomeRes.data || []);
+  groups = groupRes.error ? [] : (groupRes.data || []);
   shareRules = ruleRes.data || [];
-  setStatus(incomeRes.error ? "需执行入账SQL" : "已连接", !incomeRes.error);
+  populateGroupSelects();
+  setStatus(incomeRes.error || groupRes.error ? "需执行SQL" : "已连接", !(incomeRes.error || groupRes.error));
   render();
 }
 
@@ -265,7 +293,7 @@ function summarizeGroups(rows, unknownEntries) {
     const base = unknownEntries.reduce((s, e) => s + Number(e.amount || 0), 0);
     groups.set("未识别登记", { group: "未识别登记", people: unknownEntries.length, detailCount: unknownEntries.length, base, share: 0, final: base });
   }
-  return [...groups.values()].sort((a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group));
+  return [...groups.values()].sort((a, b) => groupSortIndex(a.group) - groupSortIndex(b.group));
 }
 
 function groupSummaryLabel(group) {
@@ -294,10 +322,37 @@ function render() {
 
   renderIncomes();
   renderSummary(rows, unknownEntries);
+  renderGroupManager();
   renderPeople(rows);
   renderPersonManager();
   renderPersonLedger(rows);
   renderLedger(monthEntries);
+}
+
+function renderGroupManager() {
+  const countByGroup = new Map();
+  for (const person of people) {
+    countByGroup.set(person.group_name, (countByGroup.get(person.group_name) || 0) + 1);
+  }
+  const rows = groups.length
+    ? [...groups]
+    : defaultGroups.map((name, index) => ({ name, sort_order: (index + 1) * 10, color: defaultGroupColors[name] || "E7E6E6", active: true }));
+  $("groupManagerBody").innerHTML = rows
+    .sort((a, b) => Number(a.sort_order || 100) - Number(b.sort_order || 100) || a.name.localeCompare(b.name, "zh-CN"))
+    .map((group) => `
+      <tr class="${group.active ? "" : "inactive"}">
+        <td>${group.active ? "启用" : "停用"}</td>
+        <td>${group.name}</td>
+        <td>${countByGroup.get(group.name) || 0}</td>
+        <td>${group.sort_order || 100}</td>
+        <td><span class="color-swatch" style="background:#${groupColor(group.name)}"></span>#${groupColor(group.name)}</td>
+        <td>
+          <div class="row-actions">
+            <button data-edit-only type="button" onclick="editGroup('${group.name}')" ${canEdit() ? "" : "disabled"}>编辑</button>
+            <button data-edit-only type="button" class="${group.active ? "danger" : "secondary"}" onclick="toggleGroup('${group.name}')" ${canEdit() ? "" : "disabled"}>${group.active ? "停用" : "启用"}</button>
+          </div>
+        </td>
+      </tr>`).join("");
 }
 
 function renderIncomes() {
@@ -328,9 +383,20 @@ function renderSummary(rows, unknownEntries) {
 
   $("summaryBody").innerHTML = groups.map((r) => `
     <tr>
-      <td>${groupSummaryLabel(r)}</td><td>${r.people}</td><td>${r.detailCount}</td><td>${fmt(r.base)}</td><td>${fmt(r.share)}</td><td class="final">${fmt(r.final)}</td>
+      <td>${groupSummaryLabel(r)}</td><td>${r.people}</td><td>${r.detailCount}</td><td>${fmt(r.base)}</td><td>${fmt(r.share)}</td><td class="final">${fmt(r.final)}</td><td>${summaryActions(r.group)}</td>
     </tr>`).join("") + `
-    <tr class="total"><td>总计</td><td>${totals.people}</td><td>${totals.detailCount}</td><td>${fmt(totals.base)}</td><td>${fmt(totals.share)}</td><td>${fmt(totals.final)}</td></tr>`;
+    <tr class="total"><td>总计</td><td>${totals.people}</td><td>${totals.detailCount}</td><td>${fmt(totals.base)}</td><td>${fmt(totals.share)}</td><td>${fmt(totals.final)}</td><td></td></tr>`;
+}
+
+function summaryActions(groupName) {
+  if (groupName === "未识别登记") {
+    return `<div class="row-actions"><button type="button" onclick="manageGroup('${groupName}')">查看</button></div>`;
+  }
+  return `
+    <div class="row-actions">
+      <button data-edit-only type="button" onclick="addPersonToGroup('${groupName}')" ${canEdit() ? "" : "disabled"}>添加</button>
+      <button type="button" class="secondary" onclick="manageGroup('${groupName}')">管理</button>
+    </div>`;
 }
 
 function renderPeople(rows) {
@@ -356,7 +422,7 @@ function renderPersonManager() {
   const rows = people
     .filter((p) => !keyword || norm(p.name).includes(keyword) || norm(p.group_name).includes(keyword) || norm(personAliasText(p.id)).includes(keyword))
     .sort((a, b) => {
-      const orderDiff = groupOrder.indexOf(a.group_name) - groupOrder.indexOf(b.group_name);
+      const orderDiff = groupSortIndex(a.group_name) - groupSortIndex(b.group_name);
       return orderDiff || a.name.localeCompare(b.name, "zh-CN");
     });
   $("personManagerBody").innerHTML = rows.map((p) => `
@@ -379,9 +445,68 @@ function resetPersonForm() {
   $("personId").value = "";
   $("personName").value = "";
   $("personAliases").value = "";
-  $("personGroup").value = editableGroups[0];
+  $("personGroup").value = editableGroups()[0] || "";
   $("personManagerMessage").textContent = "选择人员可编辑；停用后不参与后续汇总。";
 }
+
+function focusPersonManager(message) {
+  const form = $("personForm");
+  if (form) form.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (message) $("personManagerMessage").textContent = message;
+}
+
+window.addPersonToGroup = (groupName) => {
+  if (!canEdit()) return alert("请先登录后再添加人员");
+  if (!editableGroups().includes(groupName)) return;
+  resetPersonForm();
+  $("personGroup").value = groupName;
+  $("personSearch").value = groupName;
+  render();
+  focusPersonManager(`正在给 ${groupName} 添加人员`);
+  $("personName").focus();
+};
+
+window.manageGroup = (groupName) => {
+  $("personSearch").value = groupName === "未识别登记" ? "未识别" : groupName;
+  resetPersonForm();
+  render();
+  focusPersonManager(groupName === "未识别登记" ? "正在查看未识别记录" : `正在管理：${groupName}`);
+};
+
+function resetGroupForm() {
+  $("groupOriginalName").value = "";
+  $("groupName").value = "";
+  $("groupSort").value = "";
+  $("groupColor").value = "#e7e6e6";
+  $("groupManagerMessage").textContent = "停用小组后，不再出现在新增人员下拉框；历史账单仍保留。";
+}
+
+window.editGroup = (groupName) => {
+  if (!canEdit()) return alert("请先登录后再编辑小组");
+  const group = groups.find((item) => item.name === groupName) || {
+    name: groupName,
+    sort_order: groupSortIndex(groupName),
+    color: groupColor(groupName),
+    active: true,
+  };
+  $("groupOriginalName").value = group.name;
+  $("groupName").value = group.name;
+  $("groupSort").value = group.sort_order || 100;
+  $("groupColor").value = `#${groupColor(group.name)}`;
+  $("groupManagerMessage").textContent = `正在编辑小组：${group.name}`;
+  $("groupName").focus();
+};
+
+window.toggleGroup = async (groupName) => {
+  if (!canEdit()) return alert("请先登录后再调整小组状态");
+  const group = groups.find((item) => item.name === groupName);
+  if (!group) return alert("请先执行小组管理 SQL 后再停用小组");
+  const nextActive = !group.active;
+  if (!confirm(`确定${nextActive ? "启用" : "停用"} ${group.name} 吗？`)) return;
+  const { error } = await db.from("groups").update({ active: nextActive, updated_at: new Date().toISOString() }).eq("name", group.name);
+  if (error) return alert(error.message);
+  await loadAll();
+};
 
 function parseAliasInput(value) {
   return [...new Set(String(value || "").split(/[,\s，、]+/).map((x) => x.trim()).filter(Boolean))];
@@ -614,10 +739,10 @@ async function exportExcel() {
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
   });
   let currentRow = 4 + groups.length + 3;
-  for (const groupName of groupOrder.filter((g) => g !== "未识别登记")) {
+  for (const groupName of allGroupNames().filter((g) => g !== "未识别登记")) {
     const members = rows.filter((r) => r.group_name === groupName);
     if (!members.length) continue;
-    const color = groupColors[groupName] || "E7E6E6";
+    const color = groupColor(groupName);
     const titleRow = summary.getRow(currentRow);
     titleRow.getCell(1).value = `${groupName}（${members.length}人）`;
     titleRow.getCell(2).value = "人员";
@@ -657,7 +782,7 @@ async function exportExcel() {
       row.getCell(2).value = entry.raw_text;
       row.getCell(3).value = 1;
       row.getCell(4).value = Number(entry.amount || 0);
-      fillRow(row, groupColors["未识别登记"]);
+      fillRow(row, groupColor("未识别登记"));
       currentRow += 1;
     });
   }
@@ -685,7 +810,7 @@ async function exportExcel() {
   const detail = wb.addWorksheet("分组明细");
   addTitle(detail, `${monthLabel()}各小组详细明细`, 6);
   let detailRow = 3;
-  for (const groupName of groupOrder.filter((g) => g !== "未识别登记")) {
+  for (const groupName of allGroupNames().filter((g) => g !== "未识别登记")) {
     const members = rows.filter((r) => r.group_name === groupName);
     if (!members.length) continue;
     const header = detail.getRow(detailRow);
@@ -697,14 +822,14 @@ async function exportExcel() {
       if (!memberEntries.length) {
         const row = detail.getRow(detailRow);
         row.values = [groupName, member.name, "", "本月无明细", 0, ""];
-        fillRow(row, groupColors[groupName] || "E7E6E6");
+        fillRow(row, groupColor(groupName));
         detailRow += 1;
         continue;
       }
       memberEntries.forEach((entry) => {
         const row = detail.getRow(detailRow);
         row.values = [groupName, member.name, entry.entry_date, entry.raw_text, Number(entry.amount || 0), entry.status];
-        fillRow(row, groupColors[groupName] || "E7E6E6");
+        fillRow(row, groupColor(groupName));
         detailRow += 1;
       });
       const totalRow = detail.getRow(detailRow);
@@ -723,7 +848,7 @@ async function exportExcel() {
     unknownEntries.forEach((entry) => {
       const row = detail.getRow(detailRow);
       row.values = ["未识别登记", entry.raw_text, entry.entry_date, entry.raw_text, Number(entry.amount || 0), entry.status];
-      fillRow(row, groupColors["未识别登记"]);
+      fillRow(row, groupColor("未识别登记"));
       detailRow += 1;
     });
   }
@@ -933,7 +1058,56 @@ $("personForm").addEventListener("submit", async (event) => {
   await loadAll();
 });
 
+$("groupForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!canEdit()) return alert("请先登录后再保存小组");
+  const originalName = $("groupOriginalName").value.trim();
+  const name = $("groupName").value.trim();
+  const sortOrder = Number($("groupSort").value || 100);
+  const color = $("groupColor").value.replace("#", "").toUpperCase();
+  if (!name) return alert("请填写小组名称");
+  if (name === "未识别登记") return alert("未识别登记是系统保留名称，不能作为普通小组。");
+
+  if (originalName && originalName !== name) {
+    const duplicate = groups.find((group) => norm(group.name) === norm(name));
+    if (duplicate) return alert("这个小组名称已经存在。");
+  }
+
+  if (originalName) {
+    const { error } = await db.from("groups").update({
+      name,
+      sort_order: sortOrder,
+      color,
+      active: true,
+      updated_at: new Date().toISOString(),
+    }).eq("name", originalName);
+    if (error) return alert(error.message);
+    if (originalName !== name) {
+      const peopleUpdate = await db.from("people").update({ group_name: name }).eq("group_name", originalName);
+      if (peopleUpdate.error) return alert(peopleUpdate.error.message);
+      const entryUpdate = await db.from("ledger_entries").update({ group_name: name }).eq("group_name", originalName);
+      if (entryUpdate.error) return alert(entryUpdate.error.message);
+    }
+  } else {
+    const exists = groups.find((group) => norm(group.name) === norm(name));
+    if (exists) return alert("这个小组名称已经存在，请直接编辑原小组。");
+    const { error } = await db.from("groups").insert({
+      name,
+      sort_order: sortOrder,
+      color,
+      active: true,
+      note: "网站小组管理创建",
+    });
+    if (error) return alert(error.message);
+  }
+
+  resetGroupForm();
+  $("groupManagerMessage").textContent = "小组已保存";
+  await loadAll();
+});
+
 $("resetPersonForm").addEventListener("click", resetPersonForm);
+$("resetGroupForm").addEventListener("click", resetGroupForm);
 $("resetIncomeForm").addEventListener("click", resetIncomeForm);
 $("rawText").addEventListener("input", () => updatePreview("rawText", "itemName", "recognitionPreview"));
 $("editRawText").addEventListener("input", () => updatePreview("editRawText", "editItemName", "editPreview"));

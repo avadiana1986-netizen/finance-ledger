@@ -217,6 +217,15 @@ tbody tr:nth-child(even) { background: var(--soft); }
   background: #f3f5f7;
   color: #8a95a5;
 }
+.color-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-right: 6px;
+}
 .total { background: var(--gold) !important; font-weight: 700; }
 .search { width: 220px; }
 .person-ledger {
@@ -238,6 +247,7 @@ tbody tr:nth-child(even) { background: var(--soft); }
   display: flex;
   gap: 6px;
   justify-content: flex-end;
+  white-space: nowrap;
 }
 .row-actions button {
   height: 28px;
