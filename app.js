@@ -458,6 +458,7 @@ function renderPersonManager() {
         <div class="row-actions">
           <button data-edit-only onclick="editPerson('${p.id}')" ${canEdit() ? "" : "disabled"}>编辑</button>
           <button data-edit-only class="${p.active ? "danger" : "secondary"}" onclick="togglePerson('${p.id}')" ${canEdit() ? "" : "disabled"}>${p.active ? "停用" : "启用"}</button>
+          <button data-edit-only class="danger" onclick="deletePerson('${p.id}')" ${canEdit() ? "" : "disabled"}>删除</button>
         </div>
       </td>
     </tr>`).join("");
@@ -572,6 +573,31 @@ window.togglePerson = async (id) => {
   if (!confirm(`确定${text} ${person.name} 吗？`)) return;
   const { error } = await db.from("people").update({ active: nextActive }).eq("id", id);
   if (error) return alert(error.message);
+  await loadAll();
+};
+
+window.deletePerson = async (id) => {
+  if (!canEdit()) return alert("请先登录后再删除人员");
+  const person = people.find((p) => p.id === id);
+  if (!person) return;
+  const relatedCount = entries.filter((entry) => entry.person_id === id).length;
+  const suffix = relatedCount ? `\n\n这个人员有 ${relatedCount} 条历史账单，删除后这些账单会保留，并转为未识别登记。` : "";
+  if (!confirm(`确定删除 ${person.name} 吗？${suffix}`)) return;
+  const aliasDelete = await db.from("aliases").delete().eq("person_id", id);
+  if (aliasDelete.error) return alert(aliasDelete.error.message);
+  if (relatedCount) {
+    const entryUpdate = await db.from("ledger_entries").update({
+      person_id: null,
+      group_name: "未识别登记",
+      status: "未识别",
+      updated_at: new Date().toISOString(),
+    }).eq("person_id", id);
+    if (entryUpdate.error) return alert(entryUpdate.error.message);
+  }
+  const personDelete = await db.from("people").delete().eq("id", id);
+  if (personDelete.error) return alert(personDelete.error.message);
+  resetPersonForm();
+  $("personManagerMessage").textContent = "人员已删除，历史账单已保留。";
   await loadAll();
 };
 

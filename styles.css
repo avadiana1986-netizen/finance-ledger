@@ -120,10 +120,23 @@ h1, h2, p { margin: 0; }
   border-bottom: 1px solid var(--line);
   min-width: 0;
 }
+.person-admin-panel .manager-form {
+  grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr);
+  align-items: start;
+}
+.person-admin-panel .manager-form label {
+  min-width: 0;
+}
+.person-admin-panel .manager-form label:nth-of-type(3),
+.person-admin-panel .manager-actions,
+.person-admin-panel .manager-form .preview {
+  grid-column: 1 / -1;
+}
 .manager-actions {
   display: flex;
   gap: 8px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 .manager-form .preview {
   grid-column: 1 / -1;
@@ -220,7 +233,7 @@ table {
   min-width: 720px;
 }
 .person-admin-panel .action-table {
-  min-width: 620px;
+  min-width: 760px;
 }
 .ledger-panel .action-table {
   min-width: 760px;
@@ -258,9 +271,9 @@ td {
   position: sticky;
   right: 0;
   z-index: 3;
-  width: 92px;
-  min-width: 92px;
-  max-width: 92px;
+  width: 148px;
+  min-width: 148px;
+  max-width: 148px;
   background: #fff;
   box-shadow: -8px 0 12px rgba(23,35,49,.08);
 }
@@ -314,7 +327,7 @@ tbody tr:nth-child(even) { background: var(--soft); }
 }
 .row-actions button {
   height: 26px;
-  padding: 0 9px;
+  padding: 0 7px;
   font-size: 12px;
 }
 .danger { background: #bd3b2f; }
