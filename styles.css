@@ -104,6 +104,8 @@ h1, h2, p { margin: 0; }
   display: grid;
   gap: 8px;
   padding: 10px;
+  position: relative;
+  z-index: 2;
 }
 .manager-form {
   display: grid;
@@ -191,14 +193,17 @@ button.secondary { background: var(--blue); }
 }
 .table-wrap {
   overflow: auto;
+  position: relative;
+  max-width: 100%;
 }
 .table-wrap.tall {
-  max-height: 300px;
+  max-height: 260px;
 }
 table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  table-layout: fixed;
 }
 th {
   position: sticky;
@@ -215,7 +220,27 @@ td {
   border-bottom: 1px solid var(--line);
   text-align: right;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.action-table th:last-child,
+.action-table td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  width: 92px;
+  min-width: 92px;
+  max-width: 92px;
+  background: #fff;
+  box-shadow: -8px 0 12px rgba(23,35,49,.08);
+}
+.action-table th:last-child {
+  z-index: 4;
+  background: var(--blue);
+}
+.action-table tbody tr:nth-child(even) td:last-child { background: var(--soft); }
+.action-table tr.unknown td:last-child { background: var(--rose) !important; }
+.action-table tr.total td:last-child { background: var(--gold) !important; }
 tbody tr:nth-child(even) { background: var(--soft); }
 .final { background: var(--green); font-weight: 700; }
 .unknown { background: var(--rose) !important; }
