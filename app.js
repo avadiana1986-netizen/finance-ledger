@@ -204,15 +204,27 @@ function updatePreview(rawId, itemId, previewId) {
   }
 }
 
+async function readAllRows(makeQuery) {
+  const data = [];
+  const pageSize = 1000;
+  while (true) {
+    const result = await makeQuery().range(data.length, data.length + pageSize - 1);
+    if (result.error) throw result.error;
+    const page = result.data || [];
+    if (!page.length) return { data, error: null };
+    data.push(...page);
+  }
+}
+
 async function loadAll() {
   setStatus("读取数据中");
   const [peopleRes, aliasRes, entryRes, incomeRes, groupRes, ruleRes] = await Promise.all([
-    db.from("people").select("*").order("group_name").order("name"),
-    db.from("aliases").select("*"),
-    db.from("ledger_entries").select("*").order("entry_date", { ascending: false }).order("created_at", { ascending: false }),
-    db.from("finance_incomes").select("*").order("income_date", { ascending: false }).order("created_at", { ascending: false }),
-    db.from("groups").select("*").order("sort_order").order("name"),
-    db.from("share_rules").select("*").eq("enabled", true),
+    readAllRows(() => db.from("people").select("*").order("group_name").order("name").order("id")),
+    readAllRows(() => db.from("aliases").select("*").order("id")),
+    readAllRows(() => db.from("ledger_entries").select("*").order("entry_date", { ascending: false }).order("created_at", { ascending: false }).order("id")),
+    readAllRows(() => db.from("finance_incomes").select("*").order("income_date", { ascending: false }).order("created_at", { ascending: false }).order("id")),
+    readAllRows(() => db.from("groups").select("*").order("sort_order").order("name").order("id")),
+    readAllRows(() => db.from("share_rules").select("*").eq("enabled", true).order("id")),
   ]);
   for (const res of [peopleRes, aliasRes, entryRes, ruleRes]) {
     if (res.error) throw res.error;
